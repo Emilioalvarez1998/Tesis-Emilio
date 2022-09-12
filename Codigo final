@@ -32,12 +32,12 @@ library(stargazer)   #Resumen tablas
 # Abrir directorio (Donde está el archivo y los datos)
 setwd(dirname(getActiveDocumentContext()$path))
 
-# Esquema análisis
+# Esquema análisis 
 eq <- read_excel("BBDD/Esquema.xlsx",sheet=1)
 eq2 <- read_excel("BBDD/Esquema.xlsx",sheet=2)
 eq3 <- read_excel("BBDD/Esquema.xlsx",sheet="Hoja4")
 
-# Tratamiento de datos
+# Tratamiento de datos (cargar y unir base de datos)
 bd <- unique(eq$region) %>% 
   lapply(function(x){
     (if(x %in% c("Metropolitana","Coquimbo","Ohiggins")){
@@ -181,7 +181,7 @@ m54<-lm(estres~alta_agricultura*log_precio_uf_caudal, data=bd3); summary(m54)
 #lm de estres con alta_agricultura y log_caudal
 m66<-lm(estres~alta_agricultura*log_caudal, data=bd3); summary(m66)
 
-#resumen resuntalos
+#resumen resultados
 stargazer(m1,m2,m7,type="text") # Lineales  
 stargazer(pe,m3,wi, type="text")  # Binarias
 stargazer(m44,m54,m66, type="text")
