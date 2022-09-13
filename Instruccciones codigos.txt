@@ -1,0 +1,11 @@
+Instrucciones
+
+1) Cargar paquetes necesarios (Linea 12)
+2) Abrir directorio (Donlinea 125de está el archivo y los datos) (linea 32)
+3) Abrir los esquemas d8e excel (las 3 paginas) (linea 35)
+4) Cargar y unir base de datos en xls y cvv (de las disntintos rios) (linea 40)
+5) Realizar los distintos filtros de la base (tratamientos de datos) (linea 48)
+6) Formar datos de panel (Linea 100)
+7) Aplicar filtros en la base de datos (Linea 104)
+8) Obtener los modelos (linea 125)
+9) Resumen de los resultados (linea 183)
