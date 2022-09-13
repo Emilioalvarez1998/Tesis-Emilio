@@ -122,12 +122,11 @@ bd3 <- bd %>%
       select(region,alta_agricultura),
     by="region")
 
-
+#MODELOS
 # 1) MODELO ALTA_AGRICULTURA=0
 
 # Data de panel
 
-# 
 m1<-lm(log_precio_uf_caudal~log_caudal*sequia*estres, data=bd0); summary(m1)
 coeftest(m1, vcov=vcovHC(m1, type="HC0")) 
 
