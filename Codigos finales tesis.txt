@@ -1,0 +1,192 @@
+###############################################################################
+####################### ANÁLISIS ESTADÍSTICO TESIS ############################
+###############################################################################
+
+# Resetear
+rm(list=ls())
+
+# No considerar notación ciéntifica
+options(scipen=999)
+
+# Cargar paquetes 
+library(rstudioapi)  # Área de trabajo
+library(readxl)      # Abrir archivos xlsx
+library(tidyverse)   # Tratamiento de datos
+library(psych)       # Análisis descriptivo
+library(skimr)       # Análisis exploratorio
+library(readstata13) # Abrir archivos dta
+library(AER)         # Modelos 2SLS
+library(modelsummary)# Resumen de regresiones
+library(plm)         # Datos de panel
+library(stargazer)   # Salidad de modelos
+library(data.table)  # Función rbindlist
+library(lmtest)      # Coeftest
+library(tseries)     # Supuestos
+library(car)         # Supuestos
+library(writexl)     # Guardar datos
+library(caret)
+library(pROC)        # Evaluar curva de ROC
+library(marginaleffects) #efectos marginales
+library(stargazer)   #Resumen tablas 
+
+# Abrir directorio (Donde está el archivo y los datos)
+setwd(dirname(getActiveDocumentContext()$path))
+
+# Esquema análisis
+eq <- read_excel("BBDD/Esquema.xlsx",sheet=1)
+eq2 <- read_excel("BBDD/Esquema.xlsx",sheet=2)
+eq3 <- read_excel("BBDD/Esquema.xlsx",sheet="Hoja4")
+
+# Tratamiento de datos
+bd <- unique(eq$region) %>% 
+  lapply(function(x){
+    (if(x %in% c("Metropolitana","Coquimbo","Ohiggins")){
+      read_excel(paste0("BBDD/CBR_",x,".xlsx"),skip=9)
+    }else{read.dta13(paste0("BBDD/CBR_",x,".dta"))}) %>% 
+      as_tibble() %>% 
+      rename_all(function(x){gsub(" ", "",tolower(chartr('áéíóúñ','aeioun',x)))}) %>% 
+      filter(tipodetransaccion=="COMPRAVENTA") %>% 
+      mutate_at(vars(year:day),as.integer) %>% 
+      left_join(read.dta13("BBDD/UF.dta"), by=c("year","month","day")) %>% 
+      distinct() %>% 
+      filter(!is.na(uf)) %>% # Equivalente a filtro match 3 en este caso
+      filter(unidadmoneda=="PESOS"|unidadmoneda=="UF") %>%
+      filter(unidaddecaudal!="NO INDICA") %>% 
+      filter(as.numeric(caudalpromedio)>=0.05) %>% 
+      mutate(caudalpromedio=as.numeric(caudalpromedio),
+             precio_uf_caudal=case_when(
+               unidadmoneda=="PESOS" ~ (valortotaldelatransaccion/uf)/caudalpromedio,
+               unidadmoneda=="UF"    ~ valortotaldelatransaccion/caudalpromedio,
+               TRUE ~ as.numeric(NA)),
+             region=x) %>% 
+      left_join(eq,by=c("region","fuente")) %>% 
+      distinct() %>% 
+      mutate(fuente=fuente.aj) %>% 
+      dplyr::select(-fuente.aj) %>% 
+      filter(fuente %in% names(table(eq$fuente.aj[which(eq$region %in% x)]))) %>% 
+      group_by(month,year,region,fuente,naturalezadelagua) %>% # ,tipodederecho,ejerciciodelderecho
+      summarise(mean_precio=mean(precio_uf_caudal)) %>% #,sd_precio=sd(precio_uf_caudal),median_precio=median(precio_uf_caudal)
+      ungroup() %>% 
+      mutate(log_precio_uf_caudal=log(mean_precio))}) %>% 
+  rbindlist() %>% 
+  as_tibble() %>% 
+  dplyr::select(region,everything()) %>% 
+  left_join(read.dta13("BBDD/CaudalesCR2.dta") %>% dplyr::select(-fecha),by=c("year","month","fuente")) %>% 
+  distinct() %>% 
+  left_join(eq2,by="fuente") %>% 
+  distinct() %>% 
+  mutate(month=as.character(month),
+         year=as.character(year),
+         log_caudal=log(caudal),#log_caudal2=log_caudal^2,
+         edate=as.character(paste0(year,ifelse(as.numeric(month)<10,paste0("0",month),month))),
+         sequia=ifelse(as.integer(year)>=2010,1,0),
+         fuente=paste0(fuente,"-",naturalezadelagua)
+         #cluster=paste0(region,"-",edate)
+  ) %>% 
+  #fuente=paste0(region,"-",fuente)) %>% 
+  na.omit() %>% 
+  filter(!(naturalezadelagua %in% c("NO INDICA","SUBTERRANEA")))
+#dplyr::select(-c("tipodederecho","ejerciciodelderecho","caudal","mean_precio","month","year","sequia"))
+#filter(log_caudal>0 | log_precio_uf_caudal>0) %>% 
+bdc <- bd %>% 
+  left_join(
+    eq3 %>% 
+      select(region,alta_agricultura),
+    by="region")  
+#library(writexl)
+#write_xlsx(bdc,"Datos_agricultura.xlsx")
+
+
+#Formando datos de panel
+panel <- bd %>% pdata.frame(index = c('fuente','edate'))
+panel2 <- bd3 %>% pdata.frame(index = c('fuente','edate'))
+
+#bases de datos con filtros
+bd0 <- bd %>% 
+  left_join(
+    eq3 %>% 
+      select(region,alta_agricultura),
+    by="region") %>% 
+  filter(alta_agricultura==0)
+
+bd1 <- bd %>% 
+  left_join(
+    eq3 %>% 
+      select(region,alta_agricultura),
+    by="region") %>% 
+  filter(alta_agricultura==1)
+
+bd3 <- bd %>% 
+  left_join(
+    eq3 %>% 
+      select(region,alta_agricultura),
+    by="region")
+
+
+# 1) MODELO ALTA_AGRICULTURA=0
+
+# Data de panel
+
+# 
+m1<-lm(log_precio_uf_caudal~log_caudal*sequia*estres, data=bd0); summary(m1)
+coeftest(m1, vcov=vcovHC(m1, type="HC0")) 
+
+
+# estimacion modelo en zonas agricolas
+m2<-lm(log_precio_uf_caudal~log_caudal*sequia*estres, data=bd1); summary(m2)
+coeftest(m2, vcov=vcovHC(m2, type="HC0")) 
+
+
+#estimacion modelo sin filtro
+m7<-lm(log_precio_uf_caudal~log_caudal*sequia*estres, data=bd3); summary(m7)
+
+
+#modelo con efectos fijo con log_caudal
+pe<-plm(log_precio_uf_caudal~log_caudal*sequia*estres, data=panel, effect = "individual",model="within"); summary(pe)
+coeftest(pe, vcov=vcovHC(wi, type="HC0", cluster="group")) 
+fixef(pe)
+
+
+
+#Modelo ols con variable alta_agricultura, sequia y estres
+m3<-lm(log_precio_uf_caudal~alta_agricultura*sequia*estres, data=bd3); summary(m3)
+coeftest(m3, vcov=vcovHC(m3, type="HC0")) 
+
+
+#efecto fijo con variable alta_agricultura.
+
+wi<-plm(log_precio_uf_caudal~alta_agricultura*sequia*estres, data=panel2, effect = "individual",model="within"); summary(wi)
+coeftest(wi, vcov=vcovHC(wi, type="HC0", cluster="group")) 
+fixef(wi)
+
+
+#efectos aleatorios con log caudal  
+re<-plm(log_precio_uf_caudal~log_caudal*sequia*estres, data=panel, effect = "twoways",model="random"); summary(re)
+coeftest(re, vcov=vcovHC(re,type="HC0",cluster="group")) 
+
+#probit estres
+m44<-glm(estres~alta_agricultura*log_precio_uf_caudal+alta_agricultura_x_log_precio_uf_caudal, data=data,binomial(link = "probit")); summary(m44)
+
+
+# Cálculo de interacción aparte, pues las funciones de marginales no las detectan.
+data = bd3 %>% mutate(alta_agricultura_x_log_precio_uf_caudal=alta_agricultura*log_precio_uf_caudal)
+
+# Cálculo de las marginales
+summary(marginaleffects(m44))
+
+
+#lm de estres.
+m54<-lm(estres~alta_agricultura*log_precio_uf_caudal, data=bd3); summary(m54)
+
+#lm de estres con alta_agricultura y log_caudal
+m66<-lm(estres~alta_agricultura*log_caudal, data=bd3); summary(m66)
+
+#resumen resuntalos
+stargazer(m1,m2,m7,type="text") # Lineales  
+stargazer(pe,m3,wi, type="text")  # Binarias
+stargazer(m44,m54,m66, type="text")
+
+
+
+
+
